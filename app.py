@@ -280,11 +280,11 @@ EVALUATION / HEURISTICS
   A*  : g = accumulated branching cost, h = number of empty cells (admissible).
   Conflict cost (local search)   : number of missing digits over all rows and columns; 0 = solved.
 
-ALGORITHMS IMPLEMENTED (11)
+ALGORITHMS IMPLEMENTED (9)
   Uninformed : DFS (naive backtracking), BFS
   Informed   : Greedy Best-First, A*
-  CSP        : Backtracking + MRV, Forward Checking, AC-3 / MAC, Constraint Propagation (naked/hidden singles)
-  Local      : Hill Climbing with restarts, Simulated Annealing, Genetic Algorithm (memetic)
+  CSP        : Backtracking + MRV, AC-3 / MAC, Constraint Propagation (naked/hidden singles)
+  Local      : Hill Climbing with restarts, Simulated Annealing
 
 PERFORMANCE MEASURES
   Execution time, explored states (nodes / iterations / generations), backtracks (dead ends, or rejected

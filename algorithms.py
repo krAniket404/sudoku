@@ -7,10 +7,9 @@ that counts explored states, enforces the time limit and records animation frame
 Families implemented
   * Uninformed search ........ DFS (naive backtracking), BFS
   * Informed search .......... Greedy Best-First, A*
-  * CSP techniques ........... Backtracking+MRV, Forward Checking,
-                               AC-3 / MAC (arc consistency), Constraint Propagation
-  * Local / stochastic ....... Hill Climbing (random restart), Simulated Annealing,
-                               Genetic Algorithm
+  * CSP techniques ........... Backtracking+MRV, AC-3 / MAC (arc consistency),
+                               Constraint Propagation
+  * Local / stochastic ....... Hill Climbing (random restart), Simulated Annealing
 """
 import heapq
 import math
@@ -203,58 +202,8 @@ def _solution_from(d):
     return [BIT2VAL[x] for x in d]
 
 
-def _fc_assign(d, i, v):
-    """Assign v to cell i and prune it from peers' domains (forward checking)."""
-    nd = d[:]
-    bit = 1 << (v - 1)
-    nd[i] = bit
-    for p in PEERS[i]:
-        if nd[p] & bit:
-            nd[p] &= ~bit
-            if nd[p] == 0:
-                return None
-    return nd
-
-
 # ----------------------------------------------------------------------------
-# 4. Forward Checking + MRV
-# ----------------------------------------------------------------------------
-def alg_fc(grid, ctx):
-    d = [FULL] * 81
-    asg = 0
-    for i, v in enumerate(grid):
-        if v:
-            d = _fc_assign(d, i, v)
-            if d is None:
-                return None
-            asg |= 1 << i
-
-    def rec(d, asg):
-        ctx.tick()
-        ctx.frame(_view(d) if ctx.record else None)
-        best, bc = -1, 10
-        for i in range(81):
-            if not (asg >> i) & 1:
-                c = POP[d[i]]
-                if c < bc:
-                    best, bc = i, c
-        if best < 0:
-            return d
-        for v in bits(d[best]):
-            nd = _fc_assign(d, best, v)
-            if nd is not None:
-                r = rec(nd, asg | (1 << best))
-                if r:
-                    return r
-        ctx.backtracks += 1
-        return None
-
-    r = rec(d, asg)
-    return _solution_from(r) if r else None
-
-
-# ----------------------------------------------------------------------------
-# 5. AC-3 + Backtracking (MAC = Maintaining Arc Consistency)
+# 4. AC-3 + Backtracking (MAC = Maintaining Arc Consistency)
 # ----------------------------------------------------------------------------
 def _ac3(d, queue, ctx):
     """AC-3 for the binary constraints  X_i != X_j  on bit-mask domains."""
@@ -545,69 +494,6 @@ def alg_sa(grid, ctx):
 
 
 # ----------------------------------------------------------------------------
-# 11. Genetic algorithm (box-wise crossover, swap mutation, elitism)
-# ----------------------------------------------------------------------------
-def alg_ga(grid, ctx, pop_size=120):
-    rnd = random.Random()
-    _, free = _init_boxes(grid, rnd)
-    boxes = [(b, f) for b, f in enumerate(free) if len(f) >= 2]
-
-    def new_ind():
-        g, _ = _init_boxes(grid, rnd)
-        return g
-
-    def mutate(g):
-        for _ in range(rnd.choice((1, 1, 2, 3))):
-            if not boxes:
-                return
-            _, f = rnd.choice(boxes)
-            a, b = rnd.sample(f, 2)
-            g[a], g[b] = g[b], g[a]
-
-    pop = [new_ind() for _ in range(pop_size)]
-    best_seen, stagnant = 999, 0
-    while True:
-        ctx.tick()
-        scored = sorted(((_total_cost(g), g) for g in pop), key=lambda t: t[0])
-        ctx.ops += len(pop)
-        if scored[0][0] == 0:
-            return scored[0][1]
-        if ctx.nodes % 4 == 0:
-            ctx.frame(scored[0][1])
-        if scored[0][0] < best_seen:
-            best_seen, stagnant = scored[0][0], 0
-        else:
-            stagnant += 1
-        elites = [g for _, g in scored[:pop_size // 10]]
-        if stagnant > 120:                           # diversify
-            pop = elites + [new_ind() for _ in range(pop_size - len(elites))]
-            best_seen, stagnant = 999, 0
-            ctx.backtracks += 1
-            continue
-        pool = [g for _, g in scored[:pop_size // 2]]
-        nxt = [g[:] for g in elites]
-        while len(nxt) < pop_size:
-            p1, p2 = rnd.choice(pool), rnd.choice(pool)
-            child = p1[:]
-            for cells in BOX_CELLS:
-                if rnd.random() < 0.5:
-                    for c in cells:
-                        child[c] = p2[c]
-            if rnd.random() < 0.8:
-                mutate(child)
-            # memetic step: cheap local improvement (accept non-worsening swaps)
-            for _ in range(12):
-                if not boxes:
-                    break
-                _, f = rnd.choice(boxes)
-                a, b = rnd.sample(f, 2)
-                if _swap_delta(child, a, b) > 0:
-                    child[a], child[b] = child[b], child[a]
-            nxt.append(child)
-        pop = nxt
-
-
-# ----------------------------------------------------------------------------
 # Registry + runner
 # ----------------------------------------------------------------------------
 ALGORITHMS = {
@@ -617,8 +503,6 @@ ALGORITHMS = {
                    desc="Breadth-first search over partial assignments (queue). Complete but its frontier explodes, so it hits the memory limit on harder puzzles."),
     "mrv":    dict(name="Backtracking + MRV", cat="CSP", func=alg_mrv,
                    desc="Backtracking CSP search that always branches on the cell with the Minimum Remaining Values (fail-first heuristic)."),
-    "fc":     dict(name="Forward Checking + MRV", cat="CSP", func=alg_fc,
-                   desc="Each assignment immediately prunes the digit from the domains of the 20 peers; backtracks as soon as a domain becomes empty."),
     "mac":    dict(name="AC-3 + Backtracking (MAC)", cat="CSP", func=alg_mac,
                    desc="Maintains arc consistency: AC-3 runs on the binary 'not-equal' constraints before search and after every assignment."),
     "cp":     dict(name="Constraint Propagation + Search", cat="CSP", func=alg_cp,
@@ -631,8 +515,6 @@ ALGORITHMS = {
                    desc="Boxes are pre-filled with 1-9; swaps inside a box that reduce row/column conflicts are accepted, with sideways moves and random restarts."),
     "sa":     dict(name="Simulated Annealing", cat="Local search", func=alg_sa,
                    desc="Same swap neighbourhood as hill climbing but worse moves are accepted with probability exp(-dE/T); geometric cooling with restarts."),
-    "ga":     dict(name="Genetic Algorithm", cat="Local search", func=alg_ga,
-                   desc="Memetic GA: population of box-valid boards; box-wise crossover, swap mutation, local improvement, elitism and diversification. Fitness = conflicts."),
 }
 
 
